@@ -44,6 +44,8 @@ pub struct RustApp {
     /// An optional optimization setting that enables wasm-opt. Can be nothing, `0` (default), `1`,
     /// `2`, `3`, `4`, `s or `z`. Using `0` disables wasm-opt completely.
     wasm_opt: WasmOptLevel,
+    /// Target to be passed to `wasm-bindgen`.
+    wasm_target: WasmTarget,
 }
 
 impl RustApp {
@@ -76,6 +78,11 @@ impl RustApp {
             .map(|val| val.parse())
             .transpose()?
             .unwrap_or_else(|| if cfg.release { Default::default() } else { WasmOptLevel::Off });
+        let wasm_target = attrs
+            .get("data-wasm-target")
+            .map(|val| val.parse())
+            .transpose()?
+            .unwrap_or_default();
         let manifest = CargoMetadata::new(&manifest_href).await?;
         let id = Some(id);
 
@@ -89,6 +96,7 @@ impl RustApp {
             keep_debug,
             no_demangle,
             wasm_opt,
+            wasm_target,
         })
     }
 
@@ -105,6 +113,7 @@ impl RustApp {
             keep_debug: false,
             no_demangle: false,
             wasm_opt: WasmOptLevel::Off,
+            wasm_target: WasmTarget::default(),
         })
     }
 
@@ -225,7 +234,8 @@ impl RustApp {
         let arg_out_path = format!("--out-dir={}", bindgen_out.display());
         let arg_out_name = format!("--out-name={}", &hashed_name);
         let target_wasm = wasm.to_string_lossy().to_string();
-        let mut args = vec!["--target=web", &arg_out_path, &arg_out_name, "--no-typescript", &target_wasm];
+        let wasm_target = format!("--target={}", self.wasm_target.as_ref());
+        let mut args = vec![wasm_target.as_str(), &arg_out_path, &arg_out_name, "--no-typescript", &target_wasm];
         if self.keep_debug {
             args.push("--keep-debug");
         }
@@ -426,6 +436,47 @@ impl RustAppOutput {
             None => dom.select(body).append_html(script),
         }
         Ok(())
+    }
+}
+
+/// Different targets that can be used with `wasm-bindgen`.
+#[derive(PartialEq, Eq)]
+enum WasmTarget {
+    /// Corresponds to `--target no-modules`.
+    NoModules,
+    /// Corresponds to `--target web`.
+    Web,
+    /// Corresponds to `--target nodejs`.
+    NodeJs,
+}
+
+impl FromStr for WasmTarget {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "" => Self::default(),
+            "no-modules" => Self::NoModules,
+            "web" => Self::Web,
+            "nodejs" => Self::NodeJs,
+            s => bail!("unknown wasm-bindgen target: {}", s),
+        })
+    }
+}
+
+impl AsRef<str> for WasmTarget {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::NoModules => "no-modules",
+            Self::Web => "web",
+            Self::NodeJs => "nodejs",
+        }
+    }
+}
+
+impl Default for WasmTarget {
+    fn default() -> Self {
+        Self::Web
     }
 }
 

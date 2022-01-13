@@ -1,0 +1,1 @@
+../icy_harmony/shell.nix
